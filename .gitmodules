@@ -1,0 +1,3 @@
+[submodule "smaa"]
+	path = smaa
+	url = git://github.com/iryoku/smaa.git
