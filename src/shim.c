@@ -5,11 +5,11 @@
 
 #include <dlfcn.h>
 
-#include <GL/gl.h>
+#include "smaa.h"
+
 #include <GL/glx.h>
 #include <EGL/egl.h>
 
-#include "smaa.h"
 
 static void *libGL = 0;
 static void (*_glXSwapBuffers)(Display *dpy, GLXDrawable drawable);
@@ -61,13 +61,34 @@ static SMAA global_smaa;
 
 void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 {
+    GLint vao, program, texture_2d, texture, depth;
+    GLfloat clear_color[4];
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture_2d);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &texture);
+    glGetIntegerv(GL_DEPTH_TEST, &depth);
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, clear_color);
+    
     if(!libGL) {
 	shim_load_libGL();
 
 	smaa_init(&global_smaa);
     }
 
+//    glFinish();
     smaa_update(&global_smaa);
+
+    glBindVertexArray(vao);
+    glUseProgram(program);
+    glBindTexture(GL_TEXTURE_2D, texture_2d);
+    glActiveTexture(texture);
+    if(depth) {
+	glEnable(GL_DEPTH_TEST);
+    } else {
+	glDisable(GL_DEPTH_TEST);
+    }
+    glClearColor(clear_color[0], clear_color[1], clear_color[2], clear_color[3]);
 
     _glXSwapBuffers(dpy, drawable);
 }

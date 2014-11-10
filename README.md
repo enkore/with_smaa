@@ -5,11 +5,8 @@ A Linux utility to use SMAA in games which do not support it by default.
 
 Current state of work:
 
-- No support for resizing. Resizing currently causes massive corruptions.
-- Requires GLSL 3.xx?
-- Requires OpenGL 3.x/4.x
-- Only works for GLX apps right now (majority uses GLX, including
-  most/all? games available through Steam).
+- Works only with applications using OpenGL 3.2 or higher
+- No options so far.
 
 ## Installation
 
