@@ -160,11 +160,247 @@ void smaa_resize_fbo_texture(GLuint tex, int width, int height)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, 0);
 }
 
+static
+const char *smaa_settings(SMAA *smaa)
+{
+    if(!smaa->legacy) {
+	return
+	    "#version 330\n"
+	    "#define SMAA_PRESET_ULTRA 1\n"
+	    "#define SMAA_RT_METRICS in_rt_metrics\n"
+	    "#define SMAA_GLSL_3 1\n"
+	    "uniform vec4 in_rt_metrics;\n";
+    } else {
+	return
+	    "#version 130\n"
+	    "#define SMAA_PRESET_ULTRA 1\n"
+	    "#define SMAA_RT_METRICS in_rt_metrics\n"
+	    "#define SMAA_GLSL_3 1\n"
+	    "uniform vec4 in_rt_metrics;\n";
+    }
+}
+
+static
+int smaa_init_smaa_program(SMAA *smaa, GLuint *program, const char *vsmain, const char *fsmain)
+{
+    *program = glCreateProgram();
+
+    smaa_compile_smaa(*program, GL_VERTEX_SHADER, smaa_settings(smaa), vsmain);
+
+    smaa_compile_smaa(*program, GL_FRAGMENT_SHADER, smaa_settings(smaa), fsmain);
+
+    if(smaa->legacy) {
+	// All legacy programs have an in_texcoord attribute
+	glBindAttribLocation(*program, 0, "in_texcoord");
+    }
+
+    GLint attached_shaders;
+    glGetProgramiv(*program, GL_ATTACHED_SHADERS, &attached_shaders);
+    if(attached_shaders != 2 || !smaa_link_program(*program)) {
+	fprintf(stderr, "smaa_init_smaa_program error.!\n");
+	return 0;
+    }
+
+    return 1;
+}
+
+static
+int smaa_init_smaa_core(SMAA *smaa)
+{
+    int r = 
+	smaa_init_smaa_program
+	(smaa, &smaa->edge_shader,
+	 "layout(location = 0) in vec2 in_texcoord;\n"
+	 "out vec2 texcoord;\n"
+	 "out vec4 offset[3];\n"
+	 
+	 "void main() {\n"
+	 "    SMAAEdgeDetectionVS(in_texcoord, offset);\n"
+	 "    texcoord = in_texcoord;\n"
+	 "    gl_Position = vec4(in_texcoord * 2.0f + vec2(-1.0f, -1.0f), 0.0f, 1.0f);\n"
+	 "}",
+	 
+	 "uniform sampler2D in_tex;\n"
+	 "in vec2 texcoord;\n"
+	 "in vec4 offset[3];\n"
+	 "layout(location = 0) out vec4 out_color;\n"
+
+	 "void main() {\n"
+	 "    out_color = vec4(SMAALumaEdgeDetectionPS(texcoord, offset, in_tex), 0.0f, 1.0f);\n"
+	 "}");
+
+    if(!r) {
+	return r;
+    }
+
+    r = 
+	smaa_init_smaa_program
+	(smaa, &smaa->blend_shader,
+	 "layout(location = 0) in vec2 in_texcoord;\n"
+	 "out vec2 texcoord;\n"
+	 "out vec2 pixcoord;\n"
+	 "out vec4 offset[3];\n"
+	 
+	 "void main() {\n"
+	 "    SMAABlendingWeightCalculationVS(in_texcoord, pixcoord, offset);\n"
+	 "    texcoord = in_texcoord;\n"
+	 "    gl_Position = vec4(in_texcoord * 2.0f + vec2(-1.0f, -1.0f), 0.0f, 1.0f);\n"
+	 "}",
+	 
+	 "uniform sampler2D in_tex;\n"
+	 "uniform sampler2D in_area_tex;\n"
+	 "uniform sampler2D in_search_tex;\n"
+	 "in vec2 texcoord;\n"
+	 "in vec2 pixcoord;\n"
+	 "in vec4 offset[3];\n"
+	 "layout(location = 0) out vec4 out_color;\n"
+	 
+	 "void main() {\n"
+	 "    out_color = SMAABlendingWeightCalculationPS(texcoord, pixcoord, offset,\n"
+	 "        in_tex, in_area_tex, in_search_tex, vec4(0.0f));\n"
+	 "}");
+
+    if(!r) {
+	return r;
+    }
+
+    r = smaa_init_smaa_program
+	(smaa, &smaa->neighbor_shader,
+	 "layout(location = 0) in vec2 in_texcoord;\n"
+	 "out vec2 texcoord;\n"
+	 "out vec4 offset;\n"
+	 
+	 "void main() {\n"
+	 "    SMAANeighborhoodBlendingVS(in_texcoord, offset);\n"
+	 "    texcoord = in_texcoord;\n"
+	 "    gl_Position = vec4(in_texcoord * 2.0f + vec2(-1.0f, -1.0f), 0.0f, 1.0f);\n"
+	 "}",
+	 
+	 "uniform sampler2D in_tex;\n"
+	 "uniform sampler2D in_blend_tex;\n"
+	 "in vec2 texcoord;\n"
+	 "in vec4 offset;\n"
+	 "layout(location = 0) out vec4 out_color;\n"
+
+	 
+	 "void main() {\n"
+	 "    out_color = SMAANeighborhoodBlendingPS(texcoord, offset, in_tex, in_blend_tex);\n"
+	 "}");
+
+    if(!r) {
+	return r;
+    }
+
+    return 1;
+}
+
+static
+int smaa_init_smaa_legacy(SMAA *smaa)
+{
+    int r = 
+	smaa_init_smaa_program
+	(smaa, &smaa->edge_shader,
+	 "attribute vec2 in_texcoord;\n"
+	 "varying vec2 texcoord;\n"
+	 "varying vec4 offset[3];\n"
+	 
+	 "void main() {\n"
+	 "    SMAAEdgeDetectionVS(in_texcoord, offset);\n"
+	 "    texcoord = in_texcoord;\n"
+	 "    gl_Position = vec4(in_texcoord * 2.0f + vec2(-1.0f, -1.0f), 0.0f, 1.0f);\n"
+	 "}",
+	 
+	 "uniform sampler2D in_tex;\n"
+	 "varying vec2 texcoord;\n"
+	 "varying vec4 offset[3];\n"
+
+	 "void main() {\n"
+	 "    gl_FragColor = vec4(SMAALumaEdgeDetectionPS(texcoord, offset, in_tex), 0.0f, 1.0f);\n"
+	 "}");
+
+    if(!r) {
+	return r;
+    }
+
+    r = 
+	smaa_init_smaa_program
+	(smaa, &smaa->blend_shader,
+	 "attribute vec2 in_texcoord;\n"
+	 "varying vec2 texcoord;\n"
+	 "varying vec2 pixcoord;\n"
+	 "varying vec4 offset[3];\n"
+	 
+	 "void main() {\n"
+	 "    SMAABlendingWeightCalculationVS(in_texcoord, pixcoord, offset);\n"
+	 "    texcoord = in_texcoord;\n"
+	 "    gl_Position = vec4(in_texcoord * 2.0f + vec2(-1.0f, -1.0f), 0.0f, 1.0f);\n"
+	 "}",
+	 
+	 "uniform sampler2D in_tex;\n"
+	 "uniform sampler2D in_area_tex;\n"
+	 "uniform sampler2D in_search_tex;\n"
+	 "varying vec2 texcoord;\n"
+	 "varying vec2 pixcoord;\n"
+	 "varying vec4 offset[3];\n"
+	 
+	 "void main() {\n"
+	 "    gl_FragColor = SMAABlendingWeightCalculationPS(texcoord, pixcoord, offset,\n"
+	 "        in_tex, in_area_tex, in_search_tex, vec4(0.0f));\n"
+	 "}");
+
+    if(!r) {
+	return r;
+    }
+
+    r = smaa_init_smaa_program
+	(smaa, &smaa->neighbor_shader,
+	 "attribute vec2 in_texcoord;\n"
+	 "varying vec2 texcoord;\n"
+	 "varying vec4 offset;\n"
+	 
+	 "void main() {\n"
+	 "    SMAANeighborhoodBlendingVS(in_texcoord, offset);\n"
+	 "    texcoord = in_texcoord;\n"
+	 "    gl_Position = vec4(in_texcoord * 2.0f + vec2(-1.0f, -1.0f), 0.0f, 1.0f);\n"
+	 "}",
+	 
+	 "uniform sampler2D in_tex;\n"
+	 "uniform sampler2D in_blend_tex;\n"
+	 "varying vec2 texcoord;\n"
+	 "varying vec4 offset;\n"
+	 
+	 "void main() {\n"
+	 "    gl_FragColor = SMAANeighborhoodBlendingPS(texcoord, offset, in_tex, in_blend_tex);\n"
+	 "}");
+
+    if(!r) {
+	return r;
+    }
+
+    return 1;
+}
+
+static
+int smaa_init_smaa(SMAA *smaa)
+{
+    if(smaa->legacy) {
+	return smaa_init_smaa_legacy(smaa);
+    } else {
+	return smaa_init_smaa_core(smaa);
+    }
+}
+
+internal
+SMAA *smaa_create()
+{
+    SMAA *smaa = malloc(sizeof(SMAA));
+    smaa->initialized = 0;
+    return smaa;
+}
+
 internal
 void smaa_init(SMAA *smaa)
 {
-    smaa->initialized = 0;
-
     fprintf(stderr, "with_smaa: GLSL_VERSION: %s\n",
 	    (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION));
     fprintf(stderr, "with_smaa: GL_VERSION: %s\n",
@@ -174,10 +410,18 @@ void smaa_init(SMAA *smaa)
     glGetIntegerv(GL_MAJOR_VERSION, &major);
     glGetIntegerv(GL_MINOR_VERSION, &minor);
 
-    if(major <= 3 && minor < 2) {
+    if((major == 3 && minor >= 2) || major > 3) {
+	smaa->legacy = 0;
+    } else if(major == 3) {
+	fprintf(stderr, "with_smaa: detected legacy GL\n");
+	smaa->legacy = 1;
+    } else {
 	fprintf(stderr, "with_smaa: No OpenGL 3 context found\n");
+	smaa->incompatible = 1;
 	return;
     }
+
+    smaa->incompatible = 0;
 
     glGenTextures(1, &smaa->area_tex);
     glGenTextures(1, &smaa->search_tex);
@@ -201,109 +445,8 @@ void smaa_init(SMAA *smaa)
 
     checkGl();
 
-    const char *smaa_settings =
-	"#version 330\n"
-	"#define SMAA_PRESET_ULTRA 1\n"
-	"#define SMAA_RT_METRICS in_rt_metrics\n"
-	"#define SMAA_GLSL_3 1\n"
-	"uniform vec4 in_rt_metrics;\n";
-
-    smaa->edge_shader = glCreateProgram();
-
-    smaa_compile_smaa
-	(smaa->edge_shader, GL_VERTEX_SHADER, smaa_settings,
-	 "layout(location = 0) in vec2 in_texcoord;\n"
-	 "out vec2 texcoord;\n"
-	 "out vec4 offset[3];\n"
-	 
-	 "void main() {\n"
-	 "    SMAAEdgeDetectionVS(in_texcoord, offset);\n"
-	 "    texcoord = in_texcoord;\n"
-	 "    gl_Position = vec4(in_texcoord * 2.0f + vec2(-1.0f, -1.0f), 0.0f, 1.0f);\n"
-	 "}");
-    
-    smaa_compile_smaa
-	(smaa->edge_shader, GL_FRAGMENT_SHADER, smaa_settings,
-	 "uniform sampler2D in_tex;\n"
-	 "in vec2 texcoord;\n"
-	 "in vec4 offset[3];\n"
-	 "layout(location = 0) out vec4 out_color;\n"
-
-	 "void main() {\n"
-	 "    out_color = vec4(SMAALumaEdgeDetectionPS(texcoord, offset, in_tex), 0.0f, 1.0f);\n"
-	 "}");
-
-    GLint attached_shaders;
-    glGetProgramiv(smaa->edge_shader, GL_ATTACHED_SHADERS, &attached_shaders);
-    if(attached_shaders != 2 || !smaa_link_program(smaa->edge_shader)) {
-	fprintf(stderr, "Edge shader initialization failed!\n");
-	return;
-    }
-
-    smaa->blend_shader = glCreateProgram();
-
-    smaa_compile_smaa
-	(smaa->blend_shader, GL_VERTEX_SHADER, smaa_settings,
-	 "layout(location = 0) in vec2 in_texcoord;\n"
-	 "out vec2 texcoord;\n"
-	 "out vec2 pixcoord;\n"
-	 "out vec4 offset[3];\n"
-	 
-	 "void main() {\n"
-	 "    SMAABlendingWeightCalculationVS(in_texcoord, pixcoord, offset);\n"
-	 "    texcoord = in_texcoord;\n"
-	 "    gl_Position = vec4(in_texcoord * 2.0f + vec2(-1.0f, -1.0f), 0.0f, 1.0f);\n"
-	 "}");
-
-    smaa_compile_smaa
-	(smaa->blend_shader, GL_FRAGMENT_SHADER, smaa_settings,
-	 "uniform sampler2D in_tex;\n"
-	 "uniform sampler2D in_area_tex;\n"
-	 "uniform sampler2D in_search_tex;\n"
-	 "in vec2 texcoord;\n"
-	 "in vec2 pixcoord;\n"
-	 "in vec4 offset[3];\n"
-	 "layout(location = 0) out vec4 out_color;\n"
-	 
-	 "void main() {\n"
-	 "    out_color = SMAABlendingWeightCalculationPS(texcoord, pixcoord, offset,\n"
-	 "        in_tex, in_area_tex, in_search_tex, vec4(0.0f));\n"
-	 "}");
-
-    glGetProgramiv(smaa->blend_shader, GL_ATTACHED_SHADERS, &attached_shaders);
-    if(attached_shaders != 2 || !smaa_link_program(smaa->blend_shader)) {
-	fprintf(stderr, "Blend shader initialization failed!\n");
-	return;
-    }
-
-    smaa->neighbor_shader = glCreateProgram();
-
-    smaa_compile_smaa
-	(smaa->neighbor_shader, GL_VERTEX_SHADER, smaa_settings,
-	 "layout(location = 0) in vec2 in_texcoord;\n"
-	 "out vec2 texcoord;\n"
-	 "out vec4 offset;\n"
-	 
-	 "void main() {\n"
-	 "    SMAANeighborhoodBlendingVS(in_texcoord, offset);\n"
-	 "    texcoord = in_texcoord;\n"
-	 "    gl_Position = vec4(in_texcoord * 2.0f + vec2(-1.0f, -1.0f), 0.0f, 1.0f);\n"
-	 "}");
-    
-    smaa_compile_smaa
-	(smaa->neighbor_shader, GL_FRAGMENT_SHADER, smaa_settings,
-	 "uniform sampler2D in_tex;\n"
-	 "uniform sampler2D in_blend_tex;\n"
-	 "in vec2 texcoord;\n"
-	 "out vec4 offset;\n"
-	 
-	 "void main() {\n"
-	 "    gl_FragColor = SMAANeighborhoodBlendingPS(texcoord, offset, in_tex, in_blend_tex);\n"
-	 "}");
-
-    glGetProgramiv(smaa->blend_shader, GL_ATTACHED_SHADERS, &attached_shaders);
-    if(attached_shaders != 2 || !smaa_link_program(smaa->neighbor_shader)) {
-	fprintf(stderr, "Neighborhood shader initialization failed!\n");
+    if(!smaa_init_smaa(smaa)) {
+	fprintf(stderr, "smaa_init_smaa error.\n");
 	return;
     }
 
@@ -313,13 +456,16 @@ void smaa_init(SMAA *smaa)
     glGetIntegerv(GL_VIEWPORT, size);
     int width = size[2], height = size[3];
 
-    // TODO: internal formats can be optimized here
+    smaa->old_width = width;
+    smaa->old_height = height;
 
     if(!smaa_create_fbo(&smaa->edge_fbo, &smaa->edge_tex, width, height)) {
+	fprintf(stderr, "smaa_create_fbo(edge_fbo) failed.\n");
 	return;
     }
 
     if(!smaa_create_fbo(&smaa->blend_fbo, &smaa->blend_tex, width, height)) {
+	fprintf(stderr, "smaa_create_fbo(blend_fbo) failed.\n");
 	return;
     }
 
@@ -347,17 +493,23 @@ void smaa_init(SMAA *smaa)
 
     checkGl();
 
+    fprintf(stderr, "with_smaa: smaa_init() success.\n");
+    fprintf(stderr, "with_smaa: initial size: %dx%d\n", width, height);
+
     smaa->initialized = 1;
 }
 
 internal
 void smaa_update(SMAA *smaa)
 {
-    if(!smaa->initialized) {
+    if(smaa->incompatible) {
 	return;
     }
 
+    //fprintf(stdout, "smaa_update\n");
+
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
 
     GLint size[4];
     glGetIntegerv(GL_VIEWPORT, size);
@@ -368,6 +520,8 @@ void smaa_update(SMAA *smaa)
     };
 
     if(width != smaa->old_width || height != smaa->old_height) {
+	fprintf(stderr, "with_smaa: resizing %dx%d -> %dx%d\n", smaa->old_width, smaa->old_height,
+		width, height);
 	smaa_resize_fbo_texture(smaa->edge_tex, width, height);
 	smaa_resize_fbo_texture(smaa->blend_tex, width, height);
 	smaa->old_width = width;
@@ -417,6 +571,12 @@ void smaa_update(SMAA *smaa)
     glBindTexture(GL_TEXTURE_2D, smaa->search_tex);
     
     glDrawArrays(GL_TRIANGLES, 0, 6);
+
+/*    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, smaa->blend_fbo);
+    glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    return;*/
 
     // SMAA neighborhood blending pass
     // Reads blending weights from smaa->blend_tex, rendered image from smaa->color_tex

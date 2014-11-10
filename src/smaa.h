@@ -13,6 +13,8 @@
 
 typedef struct SMAA {
     int initialized;
+    int incompatible;
+    int legacy;
 
     GLuint area_tex;
     GLuint search_tex;
@@ -37,6 +39,8 @@ typedef struct SMAA {
     int old_width;
     int old_height;
 } SMAA;
+
+internal SMAA *smaa_create();
 
 internal void smaa_init(SMAA *smaa);
 
