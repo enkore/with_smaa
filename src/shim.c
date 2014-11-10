@@ -77,7 +77,7 @@ static SMAA *global_smaa = 0;
 
 void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 {
-    GLint vao, program, texture, depth, blending;
+    GLint vao, program, texture, depth, blending, srgb;
     GLfloat clear_color[4];
     glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
     glGetIntegerv(GL_CURRENT_PROGRAM, &program);
@@ -85,6 +85,7 @@ void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
     glGetIntegerv(GL_DEPTH_TEST, &depth);
     glGetFloatv(GL_COLOR_CLEAR_VALUE, clear_color);
     glGetIntegerv(GL_BLEND, &blending);
+    glGetIntegerv(GL_FRAMEBUFFER_SRGB, &srgb);
 
     GLint textures[3];
     for(int i = 0; i < 3; i++) {
@@ -123,6 +124,11 @@ void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 	glBindTexture(GL_TEXTURE_2D, textures[i]);
     }
     glActiveTexture(texture);
+    if(srgb) {
+	glEnable(GL_FRAMEBUFFER_SRGB);
+    } else {
+	glDisable(GL_FRAMEBUFFER_SRGB);
+    }
 
     _glXSwapBuffers(dpy, drawable);
 }

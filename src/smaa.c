@@ -510,6 +510,10 @@ void smaa_update(SMAA *smaa)
 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_FRAMEBUFFER_SRGB);
+    glClearColor(0, 0, 0, 0);
+
 
     GLint size[4];
     glGetIntegerv(GL_VIEWPORT, size);
@@ -533,7 +537,9 @@ void smaa_update(SMAA *smaa)
     glBindTexture(GL_TEXTURE_2D, smaa->color_tex);
     glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 0, 0, width, height, 0);
 
-    // TODO: this is right now in gamma space. not optimal. need to look up how to do this with GL
+    // I don't really have any better idea on how to get this right.
+    // Except the neighborhood blending pass no pass should use sRGB reads/writes.
+    // So I just copy it again below, just with sRGB flag set.
 
     // SMAA edge detection pass
     // Reads rendered image from smaa->color_tex and renders into smaa->edge_fbo+tex.
@@ -544,7 +550,6 @@ void smaa_update(SMAA *smaa)
     glUniform4fv(glGetUniformLocation(smaa->edge_shader, "in_rt_metrics"), 1, rt_metrics);
 
     glBindFramebuffer(GL_FRAMEBUFFER, smaa->edge_fbo);
-    glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT);
 
     GLenum db = GL_COLOR_ATTACHMENT0;
@@ -555,7 +560,6 @@ void smaa_update(SMAA *smaa)
     // SMAA blending weight calculation pass
     // Reads edges from smaa->edge_tex and renders into smaa->blend_fbo+tex.
     glBindFramebuffer(GL_FRAMEBUFFER, smaa->blend_fbo);
-    glClearColor(0, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT);
 
     glBindTexture(GL_TEXTURE_2D, smaa->edge_tex);
@@ -571,14 +575,17 @@ void smaa_update(SMAA *smaa)
     glBindTexture(GL_TEXTURE_2D, smaa->area_tex);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, smaa->search_tex);
-    
+
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
-/*    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    /*
+    // To see if edge detection works corretcly
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, smaa->blend_fbo);
     glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-    return;*/
+    return;
+    */
 
     // SMAA neighborhood blending pass
     // Reads blending weights from smaa->blend_tex, rendered image from smaa->color_tex
@@ -592,12 +599,14 @@ void smaa_update(SMAA *smaa)
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, smaa->color_tex);
+    glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, 0, 0, width, height, 0);
+
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, smaa->blend_tex);
 
     db = GL_BACK_LEFT;
     glDrawBuffers(1, &db);
 
+    glEnable(GL_FRAMEBUFFER_SRGB);
     glDrawArrays(GL_TRIANGLES, 0, 6);
-
 }
