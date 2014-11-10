@@ -139,13 +139,6 @@ int smaa_create_fbo(GLuint *_fbo, GLuint *_tex, int width, int height)
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
 
-//	glBindRenderbuffer(GL_RENDERBUFFER, rb);
-//	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
-
-//	        ARBFramebufferObject.glFramebufferRenderbuffer(ARBFramebufferObject.GL_FRAMEBUFFER,
-    //ARBFramebufferObject.GL_DEPTH_STENCIL_ATTACHMENT,
-    //              ARBFramebufferObject.GL_RENDERBUFFER, depthRenderbuffer);
-
     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
