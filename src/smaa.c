@@ -610,3 +610,52 @@ void smaa_update(SMAA *smaa)
     glEnable(GL_FRAMEBUFFER_SRGB);
     glDrawArrays(GL_TRIANGLES, 0, 6);
 }
+
+internal
+void smaa_state_save(SMAAState *state)
+{
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &state->vao);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &state->program);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &state->texture);
+    glGetIntegerv(GL_DEPTH_TEST, &state->depth);
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, state->clear_color);
+    glGetIntegerv(GL_BLEND, &state->blending);
+    glGetIntegerv(GL_FRAMEBUFFER_SRGB, &state->srgb);
+
+
+    for(int i = 0; i < 3; i++) {
+	glActiveTexture(GL_TEXTURE0 + i);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &state->textures[i]);
+    }
+
+    glActiveTexture(GL_TEXTURE0);
+}
+
+internal
+void smaa_state_restore(SMAAState *state)
+{
+    glBindVertexArray(state->vao);
+    glUseProgram(state->program);
+    if(state->depth) {
+	glEnable(GL_DEPTH_TEST);
+    } else {
+	glDisable(GL_DEPTH_TEST);
+    }
+    glClearColor(state->clear_color[0], state->clear_color[1],
+		 state->clear_color[2], state->clear_color[3]);
+    if(state->blending) {
+	glEnable(GL_BLEND);
+    } else {
+	glDisable(GL_BLEND);
+    }
+    for(int i = 0; i < 3; i++) {
+	glActiveTexture(GL_TEXTURE0 + i);
+	glBindTexture(GL_TEXTURE_2D, state->textures[i]);
+    }
+    glActiveTexture(state->texture);
+    if(state->srgb) {
+	glEnable(GL_FRAMEBUFFER_SRGB);
+    } else {
+	glDisable(GL_FRAMEBUFFER_SRGB);
+    }
+}

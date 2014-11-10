@@ -74,26 +74,11 @@ void shim_load_libEGL()
 }
 
 static SMAA *global_smaa = 0;
+static SMAAState global_smaa_state;
 
 void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 {
-    GLint vao, program, texture, depth, blending, srgb;
-    GLfloat clear_color[4];
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
-    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &texture);
-    glGetIntegerv(GL_DEPTH_TEST, &depth);
-    glGetFloatv(GL_COLOR_CLEAR_VALUE, clear_color);
-    glGetIntegerv(GL_BLEND, &blending);
-    glGetIntegerv(GL_FRAMEBUFFER_SRGB, &srgb);
-
-    GLint textures[3];
-    for(int i = 0; i < 3; i++) {
-	glActiveTexture(GL_TEXTURE0 + i);
-	glGetIntegerv(GL_TEXTURE_BINDING_2D, &textures[i]);
-    }
-
-    glActiveTexture(GL_TEXTURE0);
+    smaa_state_save(&global_smaa_state);
     
     if(!libGL) {
 	shim_load_libGL();
@@ -106,29 +91,7 @@ void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 
     smaa_update(global_smaa);
 
-    glBindVertexArray(vao);
-    glUseProgram(program);
-    if(depth) {
-	glEnable(GL_DEPTH_TEST);
-    } else {
-	glDisable(GL_DEPTH_TEST);
-    }
-    glClearColor(clear_color[0], clear_color[1], clear_color[2], clear_color[3]);
-    if(blending) {
-	glEnable(GL_BLEND);
-    } else {
-	glDisable(GL_BLEND);
-    }
-    for(int i = 0; i < 3; i++) {
-	glActiveTexture(GL_TEXTURE0 + i);
-	glBindTexture(GL_TEXTURE_2D, textures[i]);
-    }
-    glActiveTexture(texture);
-    if(srgb) {
-	glEnable(GL_FRAMEBUFFER_SRGB);
-    } else {
-	glDisable(GL_FRAMEBUFFER_SRGB);
-    }
+    smaa_state_restore(&global_smaa_state);
 
     _glXSwapBuffers(dpy, drawable);
 }
