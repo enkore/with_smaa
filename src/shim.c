@@ -77,15 +77,22 @@ static SMAA *global_smaa = 0;
 
 void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 {
-    GLint vao, program, texture_2d, texture, depth, blending;
+    GLint vao, program, texture, depth, blending;
     GLfloat clear_color[4];
     glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
     glGetIntegerv(GL_CURRENT_PROGRAM, &program);
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture_2d);
     glGetIntegerv(GL_ACTIVE_TEXTURE, &texture);
     glGetIntegerv(GL_DEPTH_TEST, &depth);
     glGetFloatv(GL_COLOR_CLEAR_VALUE, clear_color);
     glGetIntegerv(GL_BLEND, &blending);
+
+    GLint textures[3];
+    for(int i = 0; i < 3; i++) {
+	glActiveTexture(GL_TEXTURE0 + i);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &textures[i]);
+    }
+
+    glActiveTexture(GL_TEXTURE0);
     
     if(!libGL) {
 	shim_load_libGL();
@@ -100,8 +107,6 @@ void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 
     glBindVertexArray(vao);
     glUseProgram(program);
-    glBindTexture(GL_TEXTURE_2D, texture_2d);
-    glActiveTexture(texture);
     if(depth) {
 	glEnable(GL_DEPTH_TEST);
     } else {
@@ -113,6 +118,11 @@ void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
     } else {
 	glDisable(GL_BLEND);
     }
+    for(int i = 0; i < 3; i++) {
+	glActiveTexture(GL_TEXTURE0 + i);
+	glBindTexture(GL_TEXTURE_2D, textures[i]);
+    }
+    glActiveTexture(texture);
 
     _glXSwapBuffers(dpy, drawable);
 }

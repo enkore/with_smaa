@@ -533,6 +533,8 @@ void smaa_update(SMAA *smaa)
     glBindTexture(GL_TEXTURE_2D, smaa->color_tex);
     glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 0, 0, width, height, 0);
 
+    // TODO: this is right now in gamma space. not optimal. need to look up how to do this with GL
+
     // SMAA edge detection pass
     // Reads rendered image from smaa->color_tex and renders into smaa->edge_fbo+tex.
     glUseProgram(smaa->edge_shader);
@@ -597,4 +599,5 @@ void smaa_update(SMAA *smaa)
     glDrawBuffers(1, &db);
 
     glDrawArrays(GL_TRIANGLES, 0, 6);
+
 }

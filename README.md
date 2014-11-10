@@ -5,8 +5,9 @@ A Linux utility to use SMAA in games which do not support it by default.
 
 Current state of work:
 
-- Works only with applications using OpenGL 3.2 or higher
+- Works only with applications using OpenGL 3.0 or higher
 - No options so far.
+- Very crude support for multilib. Assumes 32 bit libraries are always at /usr/lib32/
 
 ## Installation
 
