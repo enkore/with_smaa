@@ -390,15 +390,7 @@ int smaa_init_smaa(SMAA *smaa)
     }
 }
 
-internal
-SMAA *smaa_create()
-{
-    SMAA *smaa = malloc(sizeof(SMAA));
-    smaa->initialized = 0;
-    return smaa;
-}
-
-internal
+static
 void smaa_init(SMAA *smaa)
 {
     fprintf(stderr, "with_smaa: GLSL_VERSION: %s\n",
@@ -409,6 +401,12 @@ void smaa_init(SMAA *smaa)
     int major, minor;
     glGetIntegerv(GL_MAJOR_VERSION, &major);
     glGetIntegerv(GL_MINOR_VERSION, &minor);
+
+    if(!strncmp((const char*)glGetString(GL_VERSION), "OpenGL ES", 9)) {
+	fprintf(stderr, "with_smaa: OpenGL ES detected, not supported\n");
+	smaa->incompatible = 1;
+	return;
+    }
 
     if((major == 3 && minor >= 2) || major > 3) {
 	smaa->legacy = 0;
@@ -499,6 +497,64 @@ void smaa_init(SMAA *smaa)
     smaa->initialized = 1;
 }
 
+static
+void smaa_state_save(SMAAState *state)
+{
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &state->vao);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &state->program);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &state->texture);
+    glGetIntegerv(GL_DEPTH_TEST, &state->depth);
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, state->clear_color);
+    glGetIntegerv(GL_BLEND, &state->blending);
+    glGetIntegerv(GL_FRAMEBUFFER_SRGB, &state->srgb);
+
+
+    for(int i = 0; i < 3; i++) {
+	glActiveTexture(GL_TEXTURE0 + i);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &state->textures[i]);
+    }
+
+    glActiveTexture(GL_TEXTURE0);
+}
+
+static
+void smaa_state_restore(SMAAState *state)
+{
+    glBindVertexArray(state->vao);
+    glUseProgram(state->program);
+    if(state->depth) {
+	glEnable(GL_DEPTH_TEST);
+    } else {
+	glDisable(GL_DEPTH_TEST);
+    }
+    glClearColor(state->clear_color[0], state->clear_color[1],
+		 state->clear_color[2], state->clear_color[3]);
+    if(state->blending) {
+	glEnable(GL_BLEND);
+    } else {
+	glDisable(GL_BLEND);
+    }
+    for(int i = 0; i < 3; i++) {
+	glActiveTexture(GL_TEXTURE0 + i);
+	glBindTexture(GL_TEXTURE_2D, state->textures[i]);
+    }
+    glActiveTexture(state->texture);
+    if(state->srgb) {
+	glEnable(GL_FRAMEBUFFER_SRGB);
+    } else {
+	glDisable(GL_FRAMEBUFFER_SRGB);
+    }
+}
+
+internal
+SMAA *smaa_create()
+{
+    SMAA *smaa = malloc(sizeof(SMAA));
+    smaa->initialized = 0;
+    smaa->incompatible = 0;
+    return smaa;
+}
+
 internal
 void smaa_update(SMAA *smaa)
 {
@@ -506,7 +562,16 @@ void smaa_update(SMAA *smaa)
 	return;
     }
 
-    //fprintf(stdout, "smaa_update\n");
+    smaa_state_save(&smaa->state);
+
+    if(!smaa->initialized) {
+	smaa_init(smaa);
+    }
+
+    if(smaa->incompatible) {
+	smaa_state_restore(&smaa->state);
+	return;
+    }
 
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
@@ -584,6 +649,7 @@ void smaa_update(SMAA *smaa)
     glBindFramebuffer(GL_READ_FRAMEBUFFER, smaa->blend_fbo);
     glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    smaa_state_restore(&smaa->state);
     return;
     */
 
@@ -609,53 +675,6 @@ void smaa_update(SMAA *smaa)
 
     glEnable(GL_FRAMEBUFFER_SRGB);
     glDrawArrays(GL_TRIANGLES, 0, 6);
-}
 
-internal
-void smaa_state_save(SMAAState *state)
-{
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &state->vao);
-    glGetIntegerv(GL_CURRENT_PROGRAM, &state->program);
-    glGetIntegerv(GL_ACTIVE_TEXTURE, &state->texture);
-    glGetIntegerv(GL_DEPTH_TEST, &state->depth);
-    glGetFloatv(GL_COLOR_CLEAR_VALUE, state->clear_color);
-    glGetIntegerv(GL_BLEND, &state->blending);
-    glGetIntegerv(GL_FRAMEBUFFER_SRGB, &state->srgb);
-
-
-    for(int i = 0; i < 3; i++) {
-	glActiveTexture(GL_TEXTURE0 + i);
-	glGetIntegerv(GL_TEXTURE_BINDING_2D, &state->textures[i]);
-    }
-
-    glActiveTexture(GL_TEXTURE0);
-}
-
-internal
-void smaa_state_restore(SMAAState *state)
-{
-    glBindVertexArray(state->vao);
-    glUseProgram(state->program);
-    if(state->depth) {
-	glEnable(GL_DEPTH_TEST);
-    } else {
-	glDisable(GL_DEPTH_TEST);
-    }
-    glClearColor(state->clear_color[0], state->clear_color[1],
-		 state->clear_color[2], state->clear_color[3]);
-    if(state->blending) {
-	glEnable(GL_BLEND);
-    } else {
-	glDisable(GL_BLEND);
-    }
-    for(int i = 0; i < 3; i++) {
-	glActiveTexture(GL_TEXTURE0 + i);
-	glBindTexture(GL_TEXTURE_2D, state->textures[i]);
-    }
-    glActiveTexture(state->texture);
-    if(state->srgb) {
-	glEnable(GL_FRAMEBUFFER_SRGB);
-    } else {
-	glDisable(GL_FRAMEBUFFER_SRGB);
-    }
+    smaa_state_restore(&smaa->state);
 }

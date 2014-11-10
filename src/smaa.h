@@ -11,6 +11,12 @@
 // As a shim library we should only export symbols we want to override
 #define internal  __attribute__ ((visibility ("hidden")))
 
+typedef struct SMAAState {
+    GLint vao, program, texture, depth, blending, srgb;
+    GLfloat clear_color[4];
+    GLint textures[3];
+} SMAAState;
+
 typedef struct SMAA {
     int initialized;
     int incompatible;
@@ -38,19 +44,11 @@ typedef struct SMAA {
 
     int old_width;
     int old_height;
+
+    SMAAState state;
 } SMAA;
 
 internal SMAA *smaa_create();
 
-internal void smaa_init(SMAA *smaa);
-
 internal void smaa_update(SMAA *smaa);
 
-typedef struct SMAAState {
-    GLint vao, program, texture, depth, blending, srgb;
-    GLfloat clear_color[4];
-    GLint textures[3];
-} SMAAState;
-
-internal void smaa_state_save(SMAAState *state);
-internal void smaa_state_restore(SMAAState *state);

@@ -74,24 +74,18 @@ void shim_load_libEGL()
 }
 
 static SMAA *global_smaa = 0;
-static SMAAState global_smaa_state;
 
 void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 {
-    smaa_state_save(&global_smaa_state);
-    
     if(!libGL) {
 	shim_load_libGL();
     }
 
     if(!global_smaa) {
 	global_smaa = smaa_create();
-	smaa_init(global_smaa);
     }
 
     smaa_update(global_smaa);
-
-    smaa_state_restore(&global_smaa_state);
 
     _glXSwapBuffers(dpy, drawable);
 }
@@ -119,6 +113,10 @@ EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 {
     if(!libEGL) {
 	shim_load_libEGL();
+    }
+
+    if(!global_smaa) {
+	global_smaa = smaa_create();
     }
 
     smaa_update(global_smaa);
